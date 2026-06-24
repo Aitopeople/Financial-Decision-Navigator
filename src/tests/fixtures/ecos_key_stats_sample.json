@@ -1,0 +1,36 @@
+{
+  "KeyStatisticList": {
+    "list_total_count": 4,
+    "row_count": 4,
+    "row": [
+      {
+        "CLASS_NAME": "환율",
+        "KEYSTAT_NAME": "원/달러 환율(종가)",
+        "DATA_VALUE": "1539.1",
+        "CYCLE": "20260623",
+        "UNIT_NAME": "원"
+      },
+      {
+        "CLASS_NAME": "소득",
+        "KEYSTAT_NAME": "GDP(명목, 계절조정)",
+        "DATA_VALUE": "764882.3",
+        "CYCLE": "2026Q1",
+        "UNIT_NAME": "십억원"
+      },
+      {
+        "CLASS_NAME": "소비",
+        "KEYSTAT_NAME": "개인신용카드사용액",
+        "DATA_VALUE": "78674829",
+        "CYCLE": "202603",
+        "UNIT_NAME": "백만원"
+      },
+      {
+        "CLASS_NAME": "가계",
+        "KEYSTAT_NAME": "가구당월평균소득",
+        "DATA_VALUE": "6969.4",
+        "CYCLE": "2024Q4",
+        "UNIT_NAME": "천원"
+      }
+    ]
+  }
+}

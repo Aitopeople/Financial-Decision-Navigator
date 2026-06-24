@@ -1,0 +1,43 @@
+{
+  "StatisticSearch": {
+    "list_total_count": 4,
+    "row": [
+      {
+        "STAT_CODE": "200Y101",
+        "STAT_NAME": "2.1.1.1. 주요지표(연간지표)",
+        "ITEM_CODE1": "10101",
+        "ITEM_NAME1": "국내총생산(명목, 원화표시)",
+        "UNIT_NAME": "십억원",
+        "TIME": "2020",
+        "DATA_VALUE": "2058466.5"
+      },
+      {
+        "STAT_CODE": "200Y101",
+        "STAT_NAME": "2.1.1.1. 주요지표(연간지표)",
+        "ITEM_CODE1": "10101",
+        "ITEM_NAME1": "국내총생산(명목, 원화표시)",
+        "UNIT_NAME": "십억원",
+        "TIME": "2021",
+        "DATA_VALUE": "2223719.9"
+      },
+      {
+        "STAT_CODE": "200Y101",
+        "STAT_NAME": "2.1.1.1. 주요지표(연간지표)",
+        "ITEM_CODE1": "10101",
+        "ITEM_NAME1": "국내총생산(명목, 원화표시)",
+        "UNIT_NAME": "십억원",
+        "TIME": "2022",
+        "DATA_VALUE": "2328169"
+      },
+      {
+        "STAT_CODE": "200Y101",
+        "STAT_NAME": "2.1.1.1. 주요지표(연간지표)",
+        "ITEM_CODE1": "10101",
+        "ITEM_NAME1": "국내총생산(명목, 원화표시)",
+        "UNIT_NAME": "십억원",
+        "TIME": "2023",
+        "DATA_VALUE": "2407575.8"
+      }
+    ]
+  }
+}

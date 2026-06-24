@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "fdn-data": {
+      "command": "python",
+      "args": [
+        "./scripts/fdn_data_mcp.py",
+        "serve"
+      ]
+    }
+  }
+}

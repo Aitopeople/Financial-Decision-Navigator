@@ -1,0 +1,48 @@
+{
+  "result": {
+    "prdt_div": "D",
+    "total_count": "2",
+    "max_page_no": "1",
+    "now_page_no": "1",
+    "err_cd": "000",
+    "err_msg": "정상",
+    "baseList": [
+      {
+        "dcls_month": "202606",
+        "fin_co_no": "0010001",
+        "kor_co_nm": "우리은행",
+        "fin_prdt_cd": "D001",
+        "fin_prdt_nm": "정기예금",
+        "join_way": "인터넷,스마트폰"
+      },
+      {
+        "dcls_month": "202606",
+        "fin_co_no": "0010002",
+        "kor_co_nm": "한국스탠다드차타드은행",
+        "fin_prdt_cd": "D002",
+        "fin_prdt_nm": "온라인 정기예금",
+        "join_way": "스마트폰"
+      }
+    ],
+    "optionList": [
+      {
+        "dcls_month": "202606",
+        "fin_co_no": "0010001",
+        "fin_prdt_cd": "D001",
+        "intr_rate_type_nm": "단리",
+        "save_trm": "12",
+        "intr_rate": 3.1,
+        "intr_rate2": 3.3
+      },
+      {
+        "dcls_month": "202606",
+        "fin_co_no": "0010002",
+        "fin_prdt_cd": "D002",
+        "intr_rate_type_nm": "단리",
+        "save_trm": "12",
+        "intr_rate": 3.2,
+        "intr_rate2": 3.5
+      }
+    ]
+  }
+}
