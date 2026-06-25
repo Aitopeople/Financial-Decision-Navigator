@@ -1,227 +1,61 @@
 # Financial Decision Navigator
 
-Financial Decision Navigator(FDN)는 주요 생애 금융 결정을 상품 추천보다 먼저 구조화하는 Codex 플러그인입니다. 은퇴, 주택 구입, 결혼 자금처럼 정답이 하나로 고정되지 않는 질문을 선택지, 시나리오, 실행 계획, 소비 행동 인사이트로 분해합니다.
+Financial Decision Navigator는 Codex에서 은퇴, 내 집 마련, 결혼 자금 같은 큰 금융 결정을 구조화해주는 플러그인입니다.
 
-## Core Value
+상품을 바로 고르는 대신, 먼저 선택지와 리스크, 필요한 숫자, 다음 행동을 정리합니다. 필요한 경우 금융감독원 Finlife, 한국은행 ECOS, 시장 프록시 데이터를 의사결정 참고값으로 사용합니다.
 
-```mermaid
-flowchart LR
-    A[User question] --> B[Decision classification]
-    B --> C[Choice framing]
-    C --> D[Data-backed scenarios]
-    D --> E[Action plan]
-    E --> F[Behavior insight]
+## Codex에서 사용하기
 
-    G[Typical finance flow] --> H[Product recommendation]
-    A -. FDN delays product discussion .-> B
-```
+Codex에서 플러그인을 선택한 뒤 자연어로 질문하면 됩니다.
 
-FDN은 사용자를 평가하지 않고, 상품을 먼저 추천하지 않습니다. 사용자가 어떤 결정을 내리는 중인지 이해한 뒤 비교 가능한 선택지와 위험, 필요한 숫자, 다음 행동을 제공합니다.
-
-## Plugin Structure
+예시:
 
 ```text
-src/
-├── .codex-plugin/plugin.json
-├── .mcp.json
-├── data/mock_spending.csv
-├── skills/
-│   ├── action-planner/
-│   ├── behavior-insight/
-│   ├── decision-framing/
-│   ├── historical-backtest/
-│   ├── path-explorer/
-│   └── scenario-simulator/
-├── scripts/
-│   ├── fdn.py
-│   ├── finlife_client.py
-│   ├── ecos_client.py
-│   └── fdn_data_mcp.py
-├── docs/
-└── tests/
+60세에 은퇴하고 싶어요. 선택지를 구조화해줘.
+10억으로 월 200만 원 생활이 가능한지 봐줘.
+주식 60, 채권 20, 현금 20 비중으로 은퇴 포트폴리오를 점검해줘.
+실제 적금 상품 몇 개만 비교해줘.
+한국 금융상품 기준으로 다시 정리해줘.
+지금 집을 사야 할지 기다려야 할지 비교해줘.
+결혼 자금 5천만 원을 2년 안에 모으고 싶어.
 ```
 
-## Architecture
+## 주요 기능
 
-```mermaid
-flowchart TB
-    U[User] --> P[Codex Plugin]
-    P --> R[fdn.py navigate]
+| 기능 | 설명 |
+|---|---|
+| 의사결정 구조화 | 은퇴, 주택, 결혼 자금 질문을 선택지와 제약으로 나눕니다. |
+| 경로 비교 | 배당형, 연금형, 자산 인출형, 혼합형 같은 선택지를 비교합니다. |
+| 실행 계획 | 목표 금액, 현재 자산, 기간, 월 저축액 기준으로 필요한 행동을 계산합니다. |
+| 시나리오 분석 | 금리 상승, 경기 침체, 고성장 같은 상황에서 영향을 정리합니다. |
+| 상품 데이터 참고 | 예금, 적금, 대출, 연금저축 등 공개 금융상품 데이터를 비교 후보로 보여줍니다. |
+| 소비 행동 인사이트 | 소비 카테고리 중 조정 가능한 영역을 목표 관점에서 정리합니다. |
 
-    R -->|home| H[Home Ownership Pipeline]
-    R -->|retirement| RT[Retirement Pipeline]
-    R -->|marriage| M[Marriage Fund Pipeline]
+## 사용하는 데이터
 
-    H --> S1[path-explorer]
-    H --> S2[scenario-simulator]
-    H --> S3[action-planner]
-    H --> S4[behavior-insight]
+- 금융감독원 Finlife: 예금, 적금, 주택담보대출, 전세자금대출, 연금저축 상품 조건
+- 한국은행 ECOS: 금리, 물가, 환율, GDP 등 거시 지표
+- Alpha Vantage: ETF와 시장 흐름을 설명하기 위한 프록시 데이터
+- 로컬 샘플 데이터: 소비 카테고리 분석 예시
 
-    RT --> S5[path-explorer]
-    RT --> S6[historical-backtest]
-    RT --> S7[scenario-simulator]
-    RT --> S8[action-planner]
+데이터는 특정 상품 가입을 권유하기 위한 것이 아니라, 의사결정 변수를 이해하기 위한 참고값입니다.
 
-    M --> S9[path-explorer]
-    M --> S10[scenario-simulator]
-    M --> S11[action-planner]
-    M --> S12[behavior-insight]
+## 로컬 테스트
 
-    P --> MCP[fdn-data MCP]
-    MCP --> F[Finlife API]
-    MCP --> E[ECOS API]
-    MCP --> L[Local SQLite mock spending]
-    MCP --> AV[Alpha Vantage allowlisted fetch]
-```
-
-## Decision Pipeline
-
-| Decision Type | Example Question | Skill Pipeline | Data Sources |
-|---|---|---|---|
-| `home` | 지금 집을 사야 할까요? | `decision-framing` -> `path-explorer` -> `scenario-simulator` -> `action-planner` -> `behavior-insight` | Finlife, ECOS, local spending data |
-| `retirement` | 60세에 은퇴하고 싶어요 | `decision-framing` -> `path-explorer` -> `historical-backtest` -> `scenario-simulator` -> `action-planner` | Alpha Vantage proxy, ECOS |
-| `marriage` | 결혼 자금을 어떻게 모을까요? | `decision-framing` -> `path-explorer` -> `scenario-simulator` -> `action-planner` -> `behavior-insight` | Finlife, ECOS, local spending data |
-
-```mermaid
-flowchart TB
-    DF[decision-framing] --> DT{decision_type}
-
-    DT -->|home| H1[path-explorer]
-    H1 --> H2[scenario-simulator]
-    H2 --> H3[action-planner]
-    H3 --> H4[behavior-insight]
-
-    DT -->|retirement| R1[path-explorer]
-    R1 --> R2[historical-backtest]
-    R2 --> R3[scenario-simulator]
-    R3 --> R4[action-planner]
-
-    DT -->|marriage| M1[path-explorer]
-    M1 --> M2[scenario-simulator]
-    M2 --> M3[action-planner]
-    M3 --> M4[behavior-insight]
-```
-
-## Data Pipeline
-
-```mermaid
-flowchart LR
-    MCP[fdn-data MCP] --> A[get_finlife_mortgage_rate_range]
-    MCP --> B[get_finlife_savings_rate_range]
-    MCP --> C[get_ecos_key_stats]
-    MCP --> D[get_ecos_statistic_search]
-    MCP --> E[get_alphavantage_monthly_series]
-    MCP --> G[get_mock_spending_summary]
-    MCP --> H[fetch_json]
-
-    A --> F[Finlife]
-    B --> F
-    C --> K[Bank of Korea ECOS]
-    D --> K
-    E --> AV[Alpha Vantage]
-    G --> S[SQLite mock spending]
-    H --> X[Allowlisted APIs]
-
-    F --> V1[Loan and deposit rate variables]
-    K --> V2[Rates, inflation, FX, GDP, consumption]
-    AV --> V4[ETF proxy and external macro variables]
-    S --> V3[Spending category flexibility]
-    X --> V5[Controlled external JSON]
-```
-
-External API values are treated as scenario variables, not as product recommendation grounds. API keys are loaded from the root `.env` only and must not be committed.
-
-```env
-FINLIFE_API_KEY=
-ECOS_API_KEY=
-ALPHAVANTAGE_API_KEY=
-FDN_MOCK_SPENDING_DB=src/data/mock_spending.sqlite
-```
-
-## Quick Start
-
-Run all commands from the repository root.
-
-### 1. Classify a decision
-
-```bash
-python src/scripts/fdn.py navigate "지금 집을 대출받아서 사야할까요 아니면 저축하면서 기다려야할까요"
-python src/scripts/fdn.py navigate "60세에 은퇴하고 싶어요"
-python src/scripts/fdn.py navigate "결혼 자금을 어떻게 모아야 할까요"
-python src/scripts/fdn.py questions home
-```
-
-### 2. Run the home ownership flow
-
-```bash
-python src/scripts/fdn.py paths home
-python src/scripts/fdn_data_mcp.py call-tool get_finlife_mortgage_rate_range --arg principal=140000000 --arg years=30 --arg limit=3
-python src/scripts/fdn_data_mcp.py call-tool get_finlife_rent_house_loan_rate_range --arg principal=100000000 --arg years=2 --arg limit=3
-python src/scripts/fdn_data_mcp.py call-tool get_ecos_key_stats
-python src/scripts/fdn_data_mcp.py call-tool get_ecos_statistic_search --arg stat_code=200Y101 --arg cycle=A --arg from_time=2020 --arg to_time=2023 --arg item_code1=10101
-python src/scripts/fdn_data_mcp.py call-tool get_mock_spending_summary
-python src/scripts/fdn.py action --goal home --target-amount 200000000 --current-asset 60000000 --monthly-budget 1500000 --annual-return 0 --target-years 8
-```
-
-### 3. Run the retirement flow
-
-```bash
-python src/scripts/fdn.py paths retirement
-python src/scripts/fdn.py backtest retirement mixed
-python src/scripts/fdn_data_mcp.py call-tool get_alphavantage_monthly_series --arg symbol=SPY --arg max_points=12
-python src/scripts/fdn.py scenario retirement mixed recession
-python src/scripts/fdn.py action --goal retirement --target-amount 700000000 --current-asset 100000000 --monthly-budget 500000 --annual-return 0.04 --target-years 20
-```
-
-### 4. Run the marriage fund flow
-
-```bash
-python src/scripts/fdn.py paths marriage
-python src/scripts/fdn_data_mcp.py call-tool get_finlife_savings_rate_range --arg product_type=deposit --arg save_trm=12 --arg limit=5
-python src/scripts/fdn_data_mcp.py call-tool get_mock_spending_summary --arg goal=marriage
-python src/scripts/fdn.py action --goal marriage --target-amount 50000000 --current-asset 10000000 --monthly-budget 1500000 --annual-return 0.03 --target-years 2
-```
-
-### 5. Run the local MCP tools
-
-```bash
-python src/scripts/fdn_data_mcp.py init-db
-python src/scripts/fdn_data_mcp.py call-tool get_mock_spending_summary
-python src/scripts/fdn_data_mcp.py call-tool list_mock_spending_transactions
-```
-
-## Validation
+저장소에서 직접 확인하려면:
 
 ```bash
 python -m unittest discover -s src/tests
 ```
 
-Validated coverage includes:
+Finlife, ECOS, Alpha Vantage의 실시간 API를 사용하려면 `.env`에 키를 넣어야 합니다.
 
-- natural-language decision routing
-- AX-style four-choice reverse questions
-- the three supported decision pipelines
-- Finlife client behavior with fixtures and live-compatible wrappers
-- Finlife rent-house loan wrapper and repayment-type payment calculation
-- ECOS client behavior with fixtures and live-compatible wrappers
-- Alpha Vantage monthly historical proxy wrapper behavior with fixtures
-- production data contract fields for MCP outputs
-- local SQLite MCP tools
-- stdio MCP tool behavior
-- behavior insight wording that avoids comparison or judgment
+```env
+FINLIFE_API_KEY=
+ECOS_API_KEY=
+ALPHAVANTAGE_API_KEY=
+```
 
-## Operating Principles
+## 주의사항
 
-| Principle | Description |
-|---|---|
-| Do not judge | Do not compare the user against averages or other people. |
-| Do not recommend products first | Explain the decision structure before discussing products. |
-| Provide choices | Provide choices, tradeoffs, and risks instead of a single answer. |
-| Use data as variables | Treat API data as scenario variables, not recommendation proof. |
-| Keep keys private | Store API keys in `.env` only and redact them from output. |
-
-## API Scope
-
-Finlife, ECOS, Alpha Vantage, and local SQLite spending data are the current supported integration layer.
-
-Public-data portal APIs are intentionally excluded until the exact housing-market data need is narrowed. FRED is also excluded because US macro data does not materially improve Korea-focused housing decisions without primary local housing price or transaction variables.
+이 플러그인은 금융상품 가입, 매수, 매도, 대출 실행을 권유하지 않습니다. 실제 가입 전에는 각 금융회사와 공식 공시의 조건, 세금, 수수료, 우대조건을 확인해야 합니다.
