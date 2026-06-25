@@ -104,6 +104,28 @@ def join_base(base_list: list[dict[str, Any]], option: dict[str, Any], keys: tup
 
 
 def summarize_mortgage(payload: dict[str, Any], principal: int, years: int, limit: int) -> dict[str, Any]:
+    return summarize_loan(
+        payload=payload,
+        service="mortgageLoanProductsSearch",
+        principal=principal,
+        years=years,
+        limit=limit,
+        decision_use="주택담보대출 상품 추천이 아니라 월 상환액과 금리 민감도 계산에 사용합니다.",
+    )
+
+
+def summarize_rent_house_loan(payload: dict[str, Any], principal: int, years: int, limit: int) -> dict[str, Any]:
+    return summarize_loan(
+        payload=payload,
+        service="rentHouseLoanProductsSearch",
+        principal=principal,
+        years=years,
+        limit=limit,
+        decision_use="전세자금대출 상품 추천이 아니라 전세 선택지의 월 상환 부담과 금리 민감도 계산에 사용합니다.",
+    )
+
+
+def summarize_loan(payload: dict[str, Any], service: str, principal: int, years: int, limit: int, decision_use: str) -> dict[str, Any]:
     result = finlife_result(payload)
     base_list = result.get("baseList") or []
     option_list = result.get("optionList") or []
@@ -116,18 +138,21 @@ def summarize_mortgage(payload: dict[str, Any], principal: int, years: int, limi
         if avg is None:
             continue
         base = join_base(base_list, option, MORTGAGE_JOIN_KEYS)
+        repayment_type = option.get("rpay_type_nm")
+        payment = monthly_payment_by_repayment(principal, avg / 100, years, str(repayment_type or ""))
         rows.append(
             {
                 "bank": base.get("kor_co_nm"),
                 "product": base.get("fin_prdt_nm"),
                 "join_way": base.get("join_way"),
                 "mortgage_type": option.get("mrtg_type_nm"),
-                "repayment_type": option.get("rpay_type_nm"),
+                "repayment_type": repayment_type,
                 "rate_type": option.get("lend_rate_type_nm"),
                 "rate_min": rate_min,
                 "rate_avg": avg,
                 "rate_max": rate_max,
-                "monthly_payment_at_avg": monthly_payment(principal, avg / 100, years).monthly_payment,
+                "monthly_payment_at_avg": payment["monthly_payment"],
+                "payment_calculation": payment["calculation"],
             }
         )
 
@@ -136,7 +161,7 @@ def summarize_mortgage(payload: dict[str, Any], principal: int, years: int, limi
     rates = [item["rate_avg"] for item in rows if item["rate_avg"] is not None]
     return {
         "source": "금융감독원 금융상품통합비교공시 Finlife",
-        "service": "mortgageLoanProductsSearch",
+        "service": service,
         "dcls_month": result.get("baseList", [{}])[0].get("dcls_month") if base_list else None,
         "total_options": len(rows),
         "principal": principal,
@@ -144,7 +169,7 @@ def summarize_mortgage(payload: dict[str, Any], principal: int, years: int, limi
         "rate_avg_min": min(rates) if rates else None,
         "rate_avg_max": max(rates) if rates else None,
         "products": selected,
-        "decision_use": "주택담보대출 상품 추천이 아니라 월 상환액과 금리 민감도 계산에 사용합니다.",
+        "decision_use": decision_use,
     }
 
 
@@ -197,6 +222,18 @@ def monthly_payment(principal: int, annual_rate: float, years: int) -> MonthlyPa
     return MonthlyPayment(principal=principal, annual_rate=annual_rate, years=years, monthly_payment=round(amount))
 
 
+def monthly_payment_by_repayment(principal: int, annual_rate: float, years: int, repayment_type: str) -> dict[str, Any]:
+    if "만기일시" in repayment_type:
+        return {
+            "monthly_payment": round(principal * annual_rate / 12),
+            "calculation": "interest_only_until_maturity",
+        }
+    return {
+        "monthly_payment": monthly_payment(principal, annual_rate, years).monthly_payment,
+        "calculation": "amortized_principal_and_interest",
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Finlife adapter for FDN")
     parser.add_argument("--auth", help="Finlife API key. Prefer FINLIFE_API_KEY env var.")
@@ -210,6 +247,11 @@ def build_parser() -> argparse.ArgumentParser:
     mortgage.add_argument("--principal", type=int, required=True)
     mortgage.add_argument("--years", type=int, default=30)
     mortgage.add_argument("--limit", type=int, default=5)
+
+    rent_house = sub.add_parser("rent-house")
+    rent_house.add_argument("--principal", type=int, required=True)
+    rent_house.add_argument("--years", type=int, default=2)
+    rent_house.add_argument("--limit", type=int, default=5)
 
     savings = sub.add_parser("savings")
     savings.add_argument("--type", choices=["deposit", "saving"], default="deposit")
@@ -236,10 +278,17 @@ def main() -> int:
             print(json.dumps(data.__dict__, ensure_ascii=False, indent=2))
             return 0
 
-        service = SERVICE_NAMES["mortgage"] if args.command == "mortgage" else SERVICE_NAMES[args.type]
+        if args.command == "mortgage":
+            service = SERVICE_NAMES["mortgage"]
+        elif args.command == "rent-house":
+            service = SERVICE_NAMES["rent_house"]
+        else:
+            service = SERVICE_NAMES[args.type]
         payload = load_payload(args.fixture, service, args.auth, top_fin_grp_no, page_no)
         if args.command == "mortgage":
             output = summarize_mortgage(payload, args.principal, args.years, args.limit)
+        elif args.command == "rent-house":
+            output = summarize_rent_house_loan(payload, args.principal, args.years, args.limit)
         else:
             output = summarize_savings(payload, args.type, args.save_trm, args.limit)
         print(json.dumps(output, ensure_ascii=False, indent=2))

@@ -24,6 +24,17 @@ Use Korean and include:
 4. A practical adjustment option.
 5. A caution that this is scenario reasoning, not a prediction.
 
+## Data Rule
+
+When the scenario depends on current rates, product rates, inflation, FX, or dated macro values, use the local `fdn-data` MCP tools first:
+
+- `get_ecos_key_stats` for latest Korean macro snapshots.
+- `get_ecos_statistic_search` for explicit historical Korean macro series.
+- `get_finlife_mortgage_rate_range` for mortgage-rate decision variables.
+- `get_finlife_savings_rate_range` for deposit/saving-rate decision variables.
+
+Do not use general web search for these data points while the MCP/API tools can answer them. If an API call fails or a required statistic code is unknown, state that limitation rather than filling the gap with an unsourced web value.
+
 ## Guardrails
 
 - Do not predict exact market levels.

@@ -80,6 +80,12 @@ Current MCP implementation:
 - `list_mock_spending_transactions(user_id, limit)`
 - `fetch_json(url, max_bytes)`
 - `get_finlife_mortgage_rate_range(principal, years, fixture, limit)`
+- `get_finlife_savings_rate_range(product_type, save_trm, fixture, limit)`
+- `get_finlife_rent_house_loan_rate_range(principal, years, fixture, limit)`
 - `get_ecos_key_stats(fixture)`
+- `get_ecos_statistic_search(stat_code, cycle, from_time, to_time, item_code1, item_code2, item_code3, item_code4, fixture)`
+- `get_alphavantage_monthly_series(symbol, fixture, max_points)`
 
 This keeps the plugin workflow stable. Later, the implementation behind those tools can move from public/free APIs to private production data sources without changing the user-facing skills.
+
+See `production-readiness.md` for the remaining API-backed data areas needed before a production launch, especially regional housing market data, jeonse/monthly rent data, pension/tax rule snapshots, and real consent-based cash-flow summaries.

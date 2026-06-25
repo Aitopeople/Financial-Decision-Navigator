@@ -56,6 +56,23 @@ def run_mcp(*args):
     return json.loads(result.stdout)
 
 
+PRODUCTION_CONTRACT_KEYS = {
+    "source",
+    "source_url_or_provider",
+    "as_of",
+    "freshness_status",
+    "assumptions",
+    "decision_use",
+    "not_recommendation_reason",
+}
+
+
+def assert_production_contract(testcase, data):
+    testcase.assertTrue(PRODUCTION_CONTRACT_KEYS.issubset(data.keys()))
+    testcase.assertIn(data["freshness_status"], {"fresh", "stale", "fixture", "user_assumption", "unavailable"})
+    testcase.assertIsInstance(data["assumptions"], list)
+
+
 class FinancialDecisionNavigatorTests(unittest.TestCase):
     def test_frame_retirement_question(self):
         data = run_cli("frame", "60세에 은퇴하고 싶어요")
@@ -77,6 +94,12 @@ class FinancialDecisionNavigatorTests(unittest.TestCase):
         self.assertIn("behavior-insight", data["pipeline"])
         self.assertIn("집값", data["trigger_response"])
         self.assertIn("Finlife mortgage rates", data["data_sources"])
+        self.assertEqual(data["clarifying_questions"][0]["options"], ["아파트", "주택", "오피스텔", "직접 입력"])
+
+    def test_navigate_understands_residence_wording_as_home(self):
+        data = run_cli("navigate", "주거 문제를 고민하고 있어요")
+        self.assertEqual(data["decision_type"], "home")
+        self.assertEqual(data["clarifying_questions"][1]["options"], ["매매", "전세", "월세", "직접 입력"])
 
     def test_navigate_routes_retirement_to_backtest_pipeline(self):
         data = run_cli("navigate", "60세에 은퇴하고 싶어요")
@@ -91,6 +114,12 @@ class FinancialDecisionNavigatorTests(unittest.TestCase):
         self.assertIn("action-planner", data["pipeline"])
         self.assertIn("behavior-insight", data["pipeline"])
         self.assertIn("목표 결혼 예산", data["trigger_response"])
+
+    def test_questions_returns_four_choice_reverse_questions(self):
+        data = run_cli("questions", "home")
+        self.assertEqual(data["question_style"], "four_choice_reverse_question")
+        self.assertEqual(data["questions"][1]["id"], "contract_type")
+        self.assertEqual(data["questions"][1]["options"], ["매매", "전세", "월세", "직접 입력"])
 
     def test_action_plan_reports_gap_and_required_monthly(self):
         data = run_cli(
@@ -195,6 +224,7 @@ class FinancialDecisionNavigatorTests(unittest.TestCase):
             "--arguments",
             json.dumps({"user_id": "sample-user", "months": 3, "goal": "home"}, ensure_ascii=False),
         )
+        assert_production_contract(self, data)
         self.assertEqual(data["source"], "local SQLite mock spending data")
         self.assertEqual(data["most_adjustable_category"], "쇼핑비")
         self.assertIn("타인 비교 없이", data["guardrail"])
@@ -214,8 +244,50 @@ class FinancialDecisionNavigatorTests(unittest.TestCase):
                 ensure_ascii=False,
             ),
         )
+        assert_production_contract(self, data)
         self.assertEqual(data["service"], "mortgageLoanProductsSearch")
         self.assertEqual(data["products"][0]["bank"], "우리은행")
+
+    def test_mcp_finlife_savings_wrapper_accepts_fixture(self):
+        data = run_mcp(
+            "call-tool",
+            "get_finlife_savings_rate_range",
+            "--arguments",
+            json.dumps(
+                {
+                    "fixture": str(FIXTURES / "finlife_deposit_sample.json"),
+                    "product_type": "deposit",
+                    "save_trm": "12",
+                    "limit": 1,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        assert_production_contract(self, data)
+        self.assertEqual(data["service"], "depositProductsSearch")
+        self.assertEqual(data["products"][0]["max_rate"], 3.5)
+
+    def test_mcp_finlife_rent_house_wrapper_accepts_fixture(self):
+        data = run_mcp(
+            "call-tool",
+            "get_finlife_rent_house_loan_rate_range",
+            "--arguments",
+            json.dumps(
+                {
+                    "fixture": str(FIXTURES / "finlife_rent_house_sample.json"),
+                    "principal": 100000000,
+                    "years": 2,
+                    "limit": 1,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        assert_production_contract(self, data)
+        self.assertEqual(data["service"], "rentHouseLoanProductsSearch")
+        self.assertEqual(data["products"][0]["bank"], "우리은행")
+        self.assertIn("전세", data["decision_use"])
+        self.assertEqual(data["products"][0]["payment_calculation"], "interest_only_until_maturity")
+        self.assertLess(data["products"][0]["monthly_payment_at_avg"], 400000)
 
     def test_mcp_ecos_wrapper_accepts_fixture(self):
         data = run_mcp(
@@ -224,8 +296,50 @@ class FinancialDecisionNavigatorTests(unittest.TestCase):
             "--arguments",
             json.dumps({"fixture": str(FIXTURES / "ecos_key_stats_sample.json")}, ensure_ascii=False),
         )
+        assert_production_contract(self, data)
         self.assertEqual(data["service"], "KeyStatisticList")
         self.assertEqual(data["indicator_count"], 4)
+
+    def test_mcp_ecos_statistic_search_accepts_fixture(self):
+        data = run_mcp(
+            "call-tool",
+            "get_ecos_statistic_search",
+            "--arguments",
+            json.dumps(
+                {
+                    "fixture": str(FIXTURES / "ecos_search_sample.json"),
+                    "stat_code": "200Y101",
+                    "cycle": "A",
+                    "from_time": "2020",
+                    "to_time": "2023",
+                    "item_code1": "10101",
+                },
+                ensure_ascii=False,
+            ),
+        )
+        assert_production_contract(self, data)
+        self.assertEqual(data["service"], "StatisticSearch")
+        self.assertEqual(data["values"][-1]["time"], "2023")
+
+    def test_mcp_alphavantage_monthly_series_accepts_fixture(self):
+        data = run_mcp(
+            "call-tool",
+            "get_alphavantage_monthly_series",
+            "--arguments",
+            json.dumps(
+                {
+                    "fixture": str(FIXTURES / "alphavantage_monthly_sample.json"),
+                    "symbol": "SPY",
+                    "max_points": 4,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        assert_production_contract(self, data)
+        self.assertEqual(data["source"], "Alpha Vantage TIME_SERIES_MONTHLY_ADJUSTED")
+        self.assertEqual(data["first_date"], "2024-01-31")
+        self.assertEqual(data["last_date"], "2024-04-30")
+        self.assertLess(data["max_drawdown_pct"], 0)
 
 
 if __name__ == "__main__":

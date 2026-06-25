@@ -33,6 +33,8 @@ ALLOWED_FETCH_HOSTS = {
     "alphavantage.co",
 }
 
+DEFAULT_NOT_RECOMMENDATION = "의사결정 변수를 제공하기 위한 데이터이며 특정 상품 가입 또는 투자를 권유하지 않습니다."
+
 
 def load_env_file(start: Path | None = None) -> None:
     current = (start or Path.cwd()).resolve()
@@ -61,6 +63,40 @@ def load_env_file(start: Path | None = None) -> None:
 def db_path() -> Path:
     configured = os.environ.get("FDN_MOCK_SPENDING_DB")
     return Path(configured).expanduser() if configured else DEFAULT_DB
+
+
+def production_contract(
+    payload: dict[str, Any],
+    *,
+    source_url_or_provider: str,
+    as_of: str | None = None,
+    freshness_status: str = "fresh",
+    assumptions: list[str] | None = None,
+    decision_use: str | None = None,
+    not_recommendation_reason: str = DEFAULT_NOT_RECOMMENDATION,
+) -> dict[str, Any]:
+    contracted = dict(payload)
+    contracted.setdefault("source_url_or_provider", source_url_or_provider)
+    contracted.setdefault("as_of", as_of or infer_as_of(contracted))
+    contracted.setdefault("freshness_status", freshness_status)
+    contracted.setdefault("assumptions", assumptions or [])
+    if decision_use:
+        contracted.setdefault("decision_use", decision_use)
+    contracted.setdefault("not_recommendation_reason", not_recommendation_reason)
+    return contracted
+
+
+def infer_as_of(payload: dict[str, Any]) -> str | None:
+    for key in ("as_of", "dcls_month", "cycle", "last_date"):
+        value = payload.get(key)
+        if value:
+            return str(value)
+    values = payload.get("values")
+    if isinstance(values, list) and values:
+        last = values[-1]
+        if isinstance(last, dict):
+            return str(last.get("time") or last.get("date") or "") or None
+    return None
 
 
 def ensure_spending_db(path: Path | None = None) -> Path:
@@ -129,13 +165,19 @@ def get_mock_spending_summary(user_id: str = "sample-user", months: int = 3, goa
     top = categories[0]["category"] if categories else None
     return {
         "source": "local SQLite mock spending data",
+        "source_url_or_provider": "project local SQLite fixture",
+        "as_of": latest["latest_month"],
+        "freshness_status": "fixture",
         "user_id": user_id,
         "goal": goal,
         "months": limit_months,
         "categories": categories,
         "most_adjustable_category": top,
         "insight": f"현재 목표 달성을 위해 조정 가능한 소비 영역은 {top}입니다." if top else None,
+        "assumptions": ["실제 사용자 소비 데이터가 아니라 익명 샘플 CSV에서 생성한 SQLite 데이터입니다."],
+        "decision_use": "목표 달성을 위해 조정 가능한 소비 카테고리를 탐색하는 데 사용합니다.",
         "guardrail": "타인 비교 없이 사용자의 목표 달성을 위한 조정 가능성만 설명합니다.",
+        "not_recommendation_reason": "소비 조정 후보를 보여주는 데이터이며 금융상품 가입 또는 투자를 권유하지 않습니다.",
     }
 
 
@@ -156,8 +198,14 @@ def list_mock_spending_transactions(user_id: str = "sample-user", limit: int = 2
         ).fetchall()
     return {
         "source": "local SQLite mock spending data",
+        "source_url_or_provider": "project local SQLite fixture",
+        "as_of": rows[0]["date"] if rows else None,
+        "freshness_status": "fixture",
         "user_id": user_id,
         "transactions": [dict(row) for row in rows],
+        "assumptions": ["실제 사용자 거래내역이 아니라 익명 샘플 CSV에서 생성한 SQLite 데이터입니다."],
+        "decision_use": "소비 패턴을 설명하기 위한 샘플 거래 확인에 사용합니다.",
+        "not_recommendation_reason": "거래 데이터 조회이며 금융상품 가입 또는 투자를 권유하지 않습니다.",
     }
 
 
@@ -198,9 +246,15 @@ def fetch_json(url: str, max_bytes: int = 200_000) -> dict[str, Any]:
         payload = {"text_preview": text[:2000]}
     return {
         "source": "allowlisted HTTPS fetch",
+        "source_url_or_provider": parsed.hostname if (parsed := urllib.parse.urlparse(url)) else None,
+        "as_of": None,
+        "freshness_status": "fresh",
         "url": redacted_url(url),
         "truncated": truncated,
         "payload": payload,
+        "assumptions": ["원천 API 응답을 정규화하지 않은 제어된 JSON fetch 결과입니다."],
+        "decision_use": "정식 MCP 도구가 없는 allowlisted API 응답을 검토하는 데 사용합니다.",
+        "not_recommendation_reason": DEFAULT_NOT_RECOMMENDATION,
     }
 
 
@@ -216,7 +270,54 @@ def get_finlife_mortgage_rate_range(principal: int = 140_000_000, years: int = 3
         os.environ.get("FINLIFE_TOP_FIN_GRP_NO") or finlife_client.BANK_GROUP,
         int(os.environ.get("FINLIFE_PAGE_NO") or "1"),
     )
-    return finlife_client.summarize_mortgage(payload, principal, years, limit)
+    return production_contract(
+        finlife_client.summarize_mortgage(payload, principal, years, limit),
+        source_url_or_provider="금융감독원 금융상품통합비교공시 Finlife",
+        freshness_status="fixture" if fixture else "fresh",
+        assumptions=[f"대출 원금 {principal}원, 기간 {years}년 기준으로 월 상환액을 계산했습니다."],
+    )
+
+
+def get_finlife_rent_house_loan_rate_range(principal: int = 100_000_000, years: int = 2, fixture: str | None = None, limit: int = 5) -> dict[str, Any]:
+    import finlife_client
+
+    load_env_file()
+    service = finlife_client.SERVICE_NAMES["rent_house"]
+    payload = finlife_client.load_payload(
+        fixture,
+        service,
+        None,
+        os.environ.get("FINLIFE_TOP_FIN_GRP_NO") or finlife_client.BANK_GROUP,
+        int(os.environ.get("FINLIFE_PAGE_NO") or "1"),
+    )
+    return production_contract(
+        finlife_client.summarize_rent_house_loan(payload, principal, years, limit),
+        source_url_or_provider="금융감독원 금융상품통합비교공시 Finlife",
+        freshness_status="fixture" if fixture else "fresh",
+        assumptions=[f"전세자금대출 원금 {principal}원, 기간 {years}년 기준으로 월 상환액을 계산했습니다."],
+    )
+
+
+def get_finlife_savings_rate_range(product_type: str = "deposit", save_trm: str | None = "12", fixture: str | None = None, limit: int = 5) -> dict[str, Any]:
+    import finlife_client
+
+    load_env_file()
+    if product_type not in {"deposit", "saving"}:
+        raise ValueError("product_type must be deposit or saving")
+    service = finlife_client.SERVICE_NAMES[product_type]
+    payload = finlife_client.load_payload(
+        fixture,
+        service,
+        None,
+        os.environ.get("FINLIFE_TOP_FIN_GRP_NO") or finlife_client.BANK_GROUP,
+        int(os.environ.get("FINLIFE_PAGE_NO") or "1"),
+    )
+    return production_contract(
+        finlife_client.summarize_savings(payload, product_type, save_trm, limit),
+        source_url_or_provider="금융감독원 금융상품통합비교공시 Finlife",
+        freshness_status="fixture" if fixture else "fresh",
+        assumptions=[f"저축 기간 {save_trm}개월 상품 조건만 비교했습니다." if save_trm else "저축 기간 필터 없이 상품 조건을 비교했습니다."],
+    )
 
 
 def get_ecos_key_stats(fixture: str | None = None) -> dict[str, Any]:
@@ -232,7 +333,116 @@ def get_ecos_key_stats(fixture: str | None = None) -> dict[str, Any]:
         int(os.environ.get("ECOS_END") or "100"),
         [],
     )
-    return ecos_client.summarize_key_stats(payload)
+    return production_contract(
+        ecos_client.summarize_key_stats(payload),
+        source_url_or_provider="한국은행 ECOS Open API",
+        freshness_status="fixture" if fixture else "fresh",
+        assumptions=["ECOS 주요지표 중 금리, 물가, 환율, GDP, 소비 등 의사결정 관련 항목을 선별했습니다."],
+    )
+
+
+def get_ecos_statistic_search(
+    stat_code: str,
+    cycle: str,
+    from_time: str,
+    to_time: str,
+    item_code1: str = "?",
+    item_code2: str = "?",
+    item_code3: str = "?",
+    item_code4: str = "?",
+    fixture: str | None = None,
+) -> dict[str, Any]:
+    import ecos_client
+
+    load_env_file()
+    payload = ecos_client.load_payload(
+        fixture,
+        "StatisticSearch",
+        None,
+        os.environ.get("ECOS_LANGUAGE") or "kr",
+        int(os.environ.get("ECOS_START") or "1"),
+        int(os.environ.get("ECOS_END") or "1000"),
+        [stat_code, cycle, from_time, to_time, item_code1, item_code2, item_code3, item_code4],
+    )
+    return production_contract(
+        ecos_client.summarize_search(payload),
+        source_url_or_provider="한국은행 ECOS Open API",
+        freshness_status="fixture" if fixture else "fresh",
+        assumptions=[f"ECOS 통계코드 {stat_code}, 주기 {cycle}, 기간 {from_time}-{to_time} 기준입니다."],
+    )
+
+
+def get_alphavantage_monthly_series(symbol: str = "SPY", fixture: str | None = None, max_points: int = 120) -> dict[str, Any]:
+    load_env_file()
+    if fixture:
+        payload = json.loads(Path(fixture).read_text(encoding="utf-8"))
+    else:
+        key = os.environ.get("ALPHAVANTAGE_API_KEY")
+        if not key:
+            raise RuntimeError("ALPHAVANTAGE_API_KEY 환경변수 값이 필요합니다. API 키는 로그에 남기지 마세요.")
+        query = urllib.parse.urlencode(
+            {
+                "function": "TIME_SERIES_MONTHLY_ADJUSTED",
+                "symbol": symbol,
+                "apikey": key,
+                "outputsize": "full",
+            }
+        )
+        payload = fetch_json(f"https://www.alphavantage.co/query?{query}", max_bytes=2_000_000)["payload"]
+
+    series = payload.get("Monthly Adjusted Time Series") or payload.get("Monthly Time Series")
+    if not isinstance(series, dict):
+        note = payload.get("Note") or payload.get("Information") or payload.get("Error Message")
+        raise ValueError(f"Alpha Vantage response does not contain monthly time series: {note}")
+
+    rows = []
+    for date, values in series.items():
+        close = values.get("5. adjusted close") or values.get("4. close")
+        try:
+            close_value = float(close)
+        except (TypeError, ValueError):
+            continue
+        rows.append({"date": date, "adjusted_close": close_value})
+    rows.sort(key=lambda item: item["date"])
+    rows = rows[-max(1, max_points) :]
+
+    returns = []
+    peak = None
+    max_drawdown = 0.0
+    previous = None
+    for row in rows:
+        price = row["adjusted_close"]
+        if previous:
+            returns.append(price / previous - 1)
+        previous = price
+        peak = price if peak is None else max(peak, price)
+        if peak:
+            max_drawdown = min(max_drawdown, price / peak - 1)
+
+    total_return = None
+    annualized_return = None
+    if len(rows) >= 2 and rows[0]["adjusted_close"]:
+        total_return = rows[-1]["adjusted_close"] / rows[0]["adjusted_close"] - 1
+        years = max(1 / 12, (len(rows) - 1) / 12)
+        annualized_return = (1 + total_return) ** (1 / years) - 1
+
+    return {
+        "source": "Alpha Vantage TIME_SERIES_MONTHLY_ADJUSTED",
+        "source_url_or_provider": "Alpha Vantage",
+        "symbol": symbol,
+        "point_count": len(rows),
+        "first_date": rows[0]["date"] if rows else None,
+        "last_date": rows[-1]["date"] if rows else None,
+        "as_of": rows[-1]["date"] if rows else None,
+        "freshness_status": "fixture" if fixture else "fresh",
+        "total_return_pct": round(total_return * 100, 2) if total_return is not None else None,
+        "annualized_return_pct": round(annualized_return * 100, 2) if annualized_return is not None else None,
+        "max_drawdown_pct": round(max_drawdown * 100, 2),
+        "values": rows,
+        "assumptions": [f"최근 {len(rows)}개 월간 조정 종가를 사용한 시장 프록시입니다."],
+        "decision_use": "은퇴 경로의 과거 시장 프록시 특성을 설명하는 데 사용하며 미래 수익을 보장하지 않습니다.",
+        "not_recommendation_reason": "시장 프록시의 과거 특성을 설명하기 위한 데이터이며 특정 ETF 또는 증권 매수를 권유하지 않습니다.",
+    }
 
 
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -280,12 +490,65 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "get_finlife_savings_rate_range": {
+        "description": "Fetch/summarize Finlife deposit or saving rate options for marriage/home waiting paths.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "product_type": {"type": "string", "default": "deposit", "enum": ["deposit", "saving"]},
+                "save_trm": {"type": "string", "default": "12"},
+                "fixture": {"type": "string"},
+                "limit": {"type": "integer", "default": 5},
+            },
+        },
+    },
+    "get_finlife_rent_house_loan_rate_range": {
+        "description": "Fetch/summarize Finlife rent-house loan rate options for jeonse decision variables.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "principal": {"type": "integer", "default": 100000000},
+                "years": {"type": "integer", "default": 2},
+                "fixture": {"type": "string"},
+                "limit": {"type": "integer", "default": 5},
+            },
+        },
+    },
     "get_ecos_key_stats": {
         "description": "Fetch/summarize ECOS key macro statistics for scenario inputs.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "fixture": {"type": "string"},
+            },
+        },
+    },
+    "get_ecos_statistic_search": {
+        "description": "Fetch/summarize ECOS historical time-series values for an explicit statistic code and period.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "stat_code": {"type": "string"},
+                "cycle": {"type": "string"},
+                "from_time": {"type": "string"},
+                "to_time": {"type": "string"},
+                "item_code1": {"type": "string", "default": "?"},
+                "item_code2": {"type": "string", "default": "?"},
+                "item_code3": {"type": "string", "default": "?"},
+                "item_code4": {"type": "string", "default": "?"},
+                "fixture": {"type": "string"},
+            },
+            "required": ["stat_code", "cycle", "from_time", "to_time"],
+        },
+    },
+    "get_alphavantage_monthly_series": {
+        "description": "Fetch/summarize Alpha Vantage monthly adjusted series for historical public-market proxy data.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "default": "SPY"},
+                "fixture": {"type": "string"},
+                "max_points": {"type": "integer", "default": 120, "minimum": 2},
             },
         },
     },
@@ -314,8 +577,40 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
             fixture=args.get("fixture"),
             limit=int(args.get("limit") or 5),
         )
+    if name == "get_finlife_savings_rate_range":
+        return get_finlife_savings_rate_range(
+            product_type=str(args.get("product_type") or "deposit"),
+            save_trm=str(args.get("save_trm")) if args.get("save_trm") is not None else "12",
+            fixture=args.get("fixture"),
+            limit=int(args.get("limit") or 5),
+        )
+    if name == "get_finlife_rent_house_loan_rate_range":
+        return get_finlife_rent_house_loan_rate_range(
+            principal=int(args.get("principal") or 100_000_000),
+            years=int(args.get("years") or 2),
+            fixture=args.get("fixture"),
+            limit=int(args.get("limit") or 5),
+        )
     if name == "get_ecos_key_stats":
         return get_ecos_key_stats(fixture=args.get("fixture"))
+    if name == "get_ecos_statistic_search":
+        return get_ecos_statistic_search(
+            stat_code=str(args["stat_code"]),
+            cycle=str(args["cycle"]),
+            from_time=str(args["from_time"]),
+            to_time=str(args["to_time"]),
+            item_code1=str(args.get("item_code1") or "?"),
+            item_code2=str(args.get("item_code2") or "?"),
+            item_code3=str(args.get("item_code3") or "?"),
+            item_code4=str(args.get("item_code4") or "?"),
+            fixture=args.get("fixture"),
+        )
+    if name == "get_alphavantage_monthly_series":
+        return get_alphavantage_monthly_series(
+            symbol=str(args.get("symbol") or "SPY"),
+            fixture=args.get("fixture"),
+            max_points=int(args.get("max_points") or 120),
+        )
     raise ValueError(f"Unknown tool: {name}")
 
 

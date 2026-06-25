@@ -107,19 +107,26 @@ flowchart TB
 ```mermaid
 flowchart LR
     MCP[fdn-data MCP] --> A[get_finlife_mortgage_rate_range]
-    MCP --> B[get_ecos_key_stats]
-    MCP --> C[get_mock_spending_summary]
-    MCP --> D[fetch_json]
+    MCP --> B[get_finlife_savings_rate_range]
+    MCP --> C[get_ecos_key_stats]
+    MCP --> D[get_ecos_statistic_search]
+    MCP --> E[get_alphavantage_monthly_series]
+    MCP --> G[get_mock_spending_summary]
+    MCP --> H[fetch_json]
 
     A --> F[Finlife]
-    B --> E[Bank of Korea ECOS]
-    C --> S[SQLite mock spending]
-    D --> X[Allowlisted APIs]
+    B --> F
+    C --> K[Bank of Korea ECOS]
+    D --> K
+    E --> AV[Alpha Vantage]
+    G --> S[SQLite mock spending]
+    H --> X[Allowlisted APIs]
 
     F --> V1[Loan and deposit rate variables]
-    E --> V2[Rates, inflation, FX, GDP, consumption]
+    K --> V2[Rates, inflation, FX, GDP, consumption]
+    AV --> V4[ETF proxy and external macro variables]
     S --> V3[Spending category flexibility]
-    X --> V4[ETF proxy and external macro variables]
+    X --> V5[Controlled external JSON]
 ```
 
 External API values are treated as scenario variables, not as product recommendation grounds. API keys are loaded from the root `.env` only and must not be committed.
@@ -141,6 +148,7 @@ Run all commands from the repository root.
 python src/scripts/fdn.py navigate "지금 집을 대출받아서 사야할까요 아니면 저축하면서 기다려야할까요"
 python src/scripts/fdn.py navigate "60세에 은퇴하고 싶어요"
 python src/scripts/fdn.py navigate "결혼 자금을 어떻게 모아야 할까요"
+python src/scripts/fdn.py questions home
 ```
 
 ### 2. Run the home ownership flow
@@ -148,7 +156,9 @@ python src/scripts/fdn.py navigate "결혼 자금을 어떻게 모아야 할까�
 ```bash
 python src/scripts/fdn.py paths home
 python src/scripts/fdn_data_mcp.py call-tool get_finlife_mortgage_rate_range --arg principal=140000000 --arg years=30 --arg limit=3
+python src/scripts/fdn_data_mcp.py call-tool get_finlife_rent_house_loan_rate_range --arg principal=100000000 --arg years=2 --arg limit=3
 python src/scripts/fdn_data_mcp.py call-tool get_ecos_key_stats
+python src/scripts/fdn_data_mcp.py call-tool get_ecos_statistic_search --arg stat_code=200Y101 --arg cycle=A --arg from_time=2020 --arg to_time=2023 --arg item_code1=10101
 python src/scripts/fdn_data_mcp.py call-tool get_mock_spending_summary
 python src/scripts/fdn.py action --goal home --target-amount 200000000 --current-asset 60000000 --monthly-budget 1500000 --annual-return 0 --target-years 8
 ```
@@ -158,6 +168,7 @@ python src/scripts/fdn.py action --goal home --target-amount 200000000 --current
 ```bash
 python src/scripts/fdn.py paths retirement
 python src/scripts/fdn.py backtest retirement mixed
+python src/scripts/fdn_data_mcp.py call-tool get_alphavantage_monthly_series --arg symbol=SPY --arg max_points=12
 python src/scripts/fdn.py scenario retirement mixed recession
 python src/scripts/fdn.py action --goal retirement --target-amount 700000000 --current-asset 100000000 --monthly-budget 500000 --annual-return 0.04 --target-years 20
 ```
@@ -166,7 +177,7 @@ python src/scripts/fdn.py action --goal retirement --target-amount 700000000 --c
 
 ```bash
 python src/scripts/fdn.py paths marriage
-python src/scripts/finlife_client.py savings --type deposit --save-trm 12 --limit 5
+python src/scripts/fdn_data_mcp.py call-tool get_finlife_savings_rate_range --arg product_type=deposit --arg save_trm=12 --arg limit=5
 python src/scripts/fdn_data_mcp.py call-tool get_mock_spending_summary --arg goal=marriage
 python src/scripts/fdn.py action --goal marriage --target-amount 50000000 --current-asset 10000000 --monthly-budget 1500000 --annual-return 0.03 --target-years 2
 ```
@@ -188,9 +199,13 @@ python -m unittest discover -s src/tests
 Validated coverage includes:
 
 - natural-language decision routing
+- AX-style four-choice reverse questions
 - the three supported decision pipelines
 - Finlife client behavior with fixtures and live-compatible wrappers
+- Finlife rent-house loan wrapper and repayment-type payment calculation
 - ECOS client behavior with fixtures and live-compatible wrappers
+- Alpha Vantage monthly historical proxy wrapper behavior with fixtures
+- production data contract fields for MCP outputs
 - local SQLite MCP tools
 - stdio MCP tool behavior
 - behavior insight wording that avoids comparison or judgment

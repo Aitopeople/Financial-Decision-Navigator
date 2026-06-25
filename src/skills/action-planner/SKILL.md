@@ -23,6 +23,17 @@ Optional:
 - annual_return
 - target_years
 
+## Data Rule
+
+If the plan uses real product rates or dated market/macro assumptions, use the local `fdn-data` MCP tools before answering:
+
+- `get_finlife_mortgage_rate_range` for mortgage payment assumptions.
+- `get_finlife_savings_rate_range` for deposit or saving-rate assumptions.
+- `get_ecos_key_stats` or `get_ecos_statistic_search` for macro assumptions.
+- `get_alphavantage_monthly_series` for public-market proxy history.
+
+Do not substitute general web search for these values. If no API value is available, keep the calculation on user-provided assumptions and label them clearly.
+
 ## Output Shape
 
 Use Korean and include:

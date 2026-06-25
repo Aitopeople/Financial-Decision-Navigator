@@ -40,6 +40,8 @@ ALPHAVANTAGE_API_KEY=
 ## 참고 문서
 
 - [API/MCP recommendations](docs/api-mcp-recommendations.md)
+- [Production readiness review](docs/production-readiness.md)
+- [Production implementation stack](docs/production-stack.md)
 - [Alpha Vantage notes](docs/alphavantage.md)
 - [ECOS spec notes](docs/ecos.md)
 - [Finlife spec notes](docs/finlife.md)

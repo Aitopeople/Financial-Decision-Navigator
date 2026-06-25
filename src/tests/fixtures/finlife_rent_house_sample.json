@@ -1,0 +1,52 @@
+{
+  "result": {
+    "prdt_div": "R",
+    "total_count": "2",
+    "max_page_no": "1",
+    "now_page_no": "1",
+    "err_cd": "000",
+    "err_msg": "정상",
+    "baseList": [
+      {
+        "dcls_month": "202606",
+        "fin_co_no": "0010001",
+        "kor_co_nm": "우리은행",
+        "fin_prdt_cd": "R001",
+        "fin_prdt_nm": "전세자금대출",
+        "join_way": "영업점,스마트폰"
+      },
+      {
+        "dcls_month": "202606",
+        "fin_co_no": "0010002",
+        "kor_co_nm": "한국스탠다드차타드은행",
+        "fin_prdt_cd": "R002",
+        "fin_prdt_nm": "모바일 전세자금대출",
+        "join_way": "스마트폰"
+      }
+    ],
+    "optionList": [
+      {
+        "dcls_month": "202606",
+        "fin_co_no": "0010001",
+        "fin_prdt_cd": "R001",
+        "mrtg_type_nm": "전세",
+        "rpay_type_nm": "만기일시상환방식",
+        "lend_rate_type_nm": "변동금리",
+        "lend_rate_min": 3.4,
+        "lend_rate_max": 5.0,
+        "lend_rate_avg": 4.1
+      },
+      {
+        "dcls_month": "202606",
+        "fin_co_no": "0010002",
+        "fin_prdt_cd": "R002",
+        "mrtg_type_nm": "전세",
+        "rpay_type_nm": "만기일시상환방식",
+        "lend_rate_type_nm": "고정금리",
+        "lend_rate_min": 3.6,
+        "lend_rate_max": 5.2,
+        "lend_rate_avg": 4.3
+      }
+    ]
+  }
+}

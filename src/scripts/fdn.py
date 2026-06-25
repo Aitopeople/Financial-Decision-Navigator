@@ -15,7 +15,7 @@ from typing import Any
 
 DECISION_KEYWORDS = {
     "retirement": ("은퇴", "노후", "연금", "배당", "생활비", "fire", "retire", "retirement"),
-    "home": ("집", "주택", "아파트", "청약", "전세", "매수", "대출", "home", "house"),
+    "home": ("집", "주거", "거주", "주택", "아파트", "오피스텔", "청약", "전세", "월세", "매수", "대출", "home", "house"),
     "marriage": ("결혼", "신혼", "예식", "혼수", "marriage", "wedding"),
     "education": ("교육", "학자금", "유학", "자녀", "education", "tuition"),
     "wealth_growth": ("목돈", "투자", "자산", "불리", "wealth", "invest"),
@@ -56,6 +56,23 @@ PIPELINES = {
         ],
         "data_sources": ["Finlife mortgage rates", "ECOS macro indicators", "Local mock spending MCP"],
         "trigger_prompt": "집값, 보유현금, 예상 대출금액, 월소득, 고정지출, 저축 가능액을 알려주시면 매수와 관망 경로를 비교해보겠습니다.",
+        "clarifying_questions": [
+            {
+                "id": "home_type",
+                "question": "주거문제를 이야기하시는데 어떤 형태의 주거를 원하시나요?",
+                "options": ["아파트", "주택", "오피스텔", "직접 입력"],
+            },
+            {
+                "id": "contract_type",
+                "question": "어떤 형태의 계약을 우선 고려하시나요?",
+                "options": ["매매", "전세", "월세", "직접 입력"],
+            },
+            {
+                "id": "decision_timing",
+                "question": "의사결정 시점은 어느 쪽에 가깝나요?",
+                "options": ["3개월 안", "1년 안", "2-3년 안", "직접 입력"],
+            },
+        ],
     },
     "retirement": {
         "skills": ["decision-framing", "path-explorer", "historical-backtest", "scenario-simulator", "action-planner"],
@@ -69,6 +86,23 @@ PIPELINES = {
         ],
         "data_sources": ["Alpha Vantage public-market proxies", "ECOS inflation and rate indicators"],
         "trigger_prompt": "목표 은퇴 나이, 목표 은퇴자금, 현재 자산, 매월 투입 가능 금액을 알려주시면 은퇴 경로를 비교해보겠습니다.",
+        "clarifying_questions": [
+            {
+                "id": "retirement_income_style",
+                "question": "은퇴 후 현금흐름은 어떤 방식에 더 끌리시나요?",
+                "options": ["배당/이자 수입", "연금 중심", "자산 일부 인출", "직접 입력"],
+            },
+            {
+                "id": "risk_response",
+                "question": "은퇴자금이 일시적으로 하락하면 어떤 대응이 가장 편하신가요?",
+                "options": ["원금 안정 우선", "일부 변동 감수", "장기라면 감수", "직접 입력"],
+            },
+            {
+                "id": "retirement_timing",
+                "question": "목표 은퇴 시점은 어느 쪽에 가깝나요?",
+                "options": ["5년 안", "10년 안", "20년 안", "직접 입력"],
+            },
+        ],
     },
     "marriage": {
         "skills": ["decision-framing", "path-explorer", "scenario-simulator", "action-planner", "behavior-insight"],
@@ -82,24 +116,62 @@ PIPELINES = {
         ],
         "data_sources": ["Finlife deposit and savings rates", "ECOS inflation indicators", "Local mock spending MCP"],
         "trigger_prompt": "목표 결혼 예산, 준비 기간, 현재 모아둔 금액, 매월 저축 가능액을 알려주시면 저축 중심과 투자 병행 경로를 비교해보겠습니다.",
+        "clarifying_questions": [
+            {
+                "id": "marriage_timing",
+                "question": "결혼 준비 기간은 어느 쪽에 가깝나요?",
+                "options": ["1년 안", "2년 안", "3년 이상", "직접 입력"],
+            },
+            {
+                "id": "budget_priority",
+                "question": "예산에서 가장 먼저 정리하고 싶은 항목은 무엇인가요?",
+                "options": ["예식/스드메", "신혼집", "혼수", "직접 입력"],
+            },
+            {
+                "id": "saving_style",
+                "question": "목표자금 준비 방식은 어떤 쪽이 편하신가요?",
+                "options": ["예적금 중심", "일부 투자 병행", "소비 조정 우선", "직접 입력"],
+            },
+        ],
     },
     "education": {
         "skills": ["decision-framing"],
         "required_inputs": ["target_amount", "target_date", "current_asset", "monthly_budget"],
         "data_sources": [],
         "trigger_prompt": "교육 자금은 다음 단계 확장 범위입니다. 목표 금액과 시점을 알려주시면 우선 실행 계획 형태로 정리할 수 있습니다.",
+        "clarifying_questions": [
+            {
+                "id": "education_goal",
+                "question": "교육자금은 어떤 목표에 가장 가깝나요?",
+                "options": ["대학 등록금", "유학", "사교육비", "직접 입력"],
+            }
+        ],
     },
     "wealth_growth": {
         "skills": ["decision-framing"],
         "required_inputs": ["target_amount", "time_horizon", "current_asset", "monthly_budget", "risk_tolerance"],
         "data_sources": [],
         "trigger_prompt": "자산 성장 목표는 다음 단계 확장 범위입니다. 목표 금액, 기간, 현재 자산, 월 예산을 알려주시면 의사결정 프레임부터 정리하겠습니다.",
+        "clarifying_questions": [
+            {
+                "id": "wealth_goal",
+                "question": "자산 성장은 어떤 목표에 가장 가깝나요?",
+                "options": ["목돈 만들기", "투자 경험 쌓기", "인플레이션 대응", "직접 입력"],
+            }
+        ],
     },
     "uncertain": {
         "skills": ["decision-framing"],
         "required_inputs": ["primary_goal", "target_date", "current_asset", "monthly_budget"],
         "data_sources": [],
         "trigger_prompt": "은퇴, 내 집 마련, 결혼 자금 중 어느 목표에 가장 가까운지 먼저 알려주세요.",
+        "clarifying_questions": [
+            {
+                "id": "primary_goal",
+                "question": "지금 가장 먼저 정리하고 싶은 금융 고민은 무엇인가요?",
+                "options": ["은퇴 준비", "내 집 마련", "결혼 자금", "직접 입력"],
+            }
+        ],
     },
 }
 
@@ -198,6 +270,17 @@ def list_paths(decision_type: str) -> dict[str, Any]:
     }
 
 
+def clarifying_questions(decision_type: str) -> dict[str, Any]:
+    pipeline = PIPELINES.get(decision_type, PIPELINES["uncertain"])
+    questions = pipeline.get("clarifying_questions", [])
+    return {
+        "decision_type": decision_type if decision_type in PIPELINES else "uncertain",
+        "question_style": "four_choice_reverse_question",
+        "questions": questions,
+        "usage": "사용자가 스스로 선호와 제약을 구체화하도록 한 번에 1-2개씩 제시합니다.",
+    }
+
+
 def navigate(question: str) -> dict[str, Any]:
     frame = frame_question(question)
     decision_type = str(frame["decision_type"])
@@ -213,6 +296,7 @@ def navigate(question: str) -> dict[str, Any]:
         "required_inputs": pipeline["required_inputs"],
         "data_sources": pipeline["data_sources"],
         "trigger_response": pipeline["trigger_prompt"],
+        "clarifying_questions": pipeline.get("clarifying_questions", []),
         "routing_intent": "사용자의 다음 입력이 필요한 스킬을 자연스럽게 호출하도록 유도합니다.",
     }
 
@@ -327,6 +411,9 @@ def build_parser() -> argparse.ArgumentParser:
     paths = sub.add_parser("paths")
     paths.add_argument("decision_type")
 
+    questions = sub.add_parser("questions")
+    questions.add_argument("decision_type")
+
     bt = sub.add_parser("backtest")
     bt.add_argument("decision_type")
     bt.add_argument("strategy")
@@ -359,6 +446,8 @@ def main() -> int:
         emit(navigate(args.question))
     elif args.command == "paths":
         emit(list_paths(args.decision_type))
+    elif args.command == "questions":
+        emit(clarifying_questions(args.decision_type))
     elif args.command == "backtest":
         emit(backtest(args.decision_type, args.strategy))
     elif args.command == "scenario":
