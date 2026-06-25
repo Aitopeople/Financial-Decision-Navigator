@@ -190,6 +190,49 @@ class FinancialDecisionNavigatorTests(unittest.TestCase):
         self.assertEqual(data["products"][0]["max_rate"], 3.5)
         self.assertIn("저축하며 기다리는", data["decision_use"])
 
+    def test_finlife_savings_filters_by_join_way_and_basic_rate(self):
+        data = run_finlife(
+            "--fixture",
+            str(FIXTURES / "finlife_deposit_sample.json"),
+            "savings",
+            "--type",
+            "deposit",
+            "--save-trm",
+            "12",
+            "--join-way",
+            "스마트폰",
+            "--min-basic-rate",
+            "3.15",
+            "--sort-by",
+            "basic_rate",
+            "--limit",
+            "5",
+        )
+        self.assertEqual(data["total_options"], 1)
+        self.assertEqual(data["products"][0]["bank"], "한국스탠다드차타드은행")
+        self.assertEqual(data["filters"]["sort_by"], "basic_rate")
+
+    def test_finlife_annuity_saving_fixture_filters_retirement_income_terms(self):
+        data = run_finlife(
+            "--fixture",
+            str(FIXTURES / "finlife_annuity_saving_sample.json"),
+            "annuity-saving",
+            "--start-age",
+            "60",
+            "--monthly-pay",
+            "20",
+            "--pay-period",
+            "10",
+            "--receive-term",
+            "20년",
+            "--limit",
+            "5",
+        )
+        self.assertEqual(data["service"], "annuitySavingProductsSearch")
+        self.assertEqual(data["total_options"], 1)
+        self.assertEqual(data["products"][0]["pension_kind"], "연금저축펀드")
+        self.assertEqual(data["products"][0]["expected_receive_amount"], 623168)
+
     def test_ecos_key_stats_fixture_selects_macro_indicators(self):
         data = run_ecos("--fixture", str(FIXTURES / "ecos_key_stats_sample.json"), "key-stats")
         self.assertEqual(data["service"], "KeyStatisticList")
@@ -267,6 +310,49 @@ class FinancialDecisionNavigatorTests(unittest.TestCase):
         self.assertEqual(data["service"], "depositProductsSearch")
         self.assertEqual(data["products"][0]["max_rate"], 3.5)
 
+    def test_mcp_finlife_deposit_saving_candidates_accepts_filters(self):
+        data = run_mcp(
+            "call-tool",
+            "get_finlife_deposit_saving_candidates",
+            "--arguments",
+            json.dumps(
+                {
+                    "fixture": str(FIXTURES / "finlife_deposit_sample.json"),
+                    "product_type": "deposit",
+                    "save_trm": "12",
+                    "join_way": "스마트폰",
+                    "min_basic_rate": 3.15,
+                    "sort_by": "basic_rate",
+                    "limit": 5,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        assert_production_contract(self, data)
+        self.assertEqual(data["total_options"], 1)
+        self.assertEqual(data["products"][0]["product"], "온라인 정기예금")
+
+    def test_mcp_finlife_annuity_saving_options_accepts_fixture(self):
+        data = run_mcp(
+            "call-tool",
+            "get_finlife_annuity_saving_options",
+            "--arguments",
+            json.dumps(
+                {
+                    "fixture": str(FIXTURES / "finlife_annuity_saving_sample.json"),
+                    "start_age": 60,
+                    "monthly_pay": 20,
+                    "pay_period": 10,
+                    "receive_term": "20년",
+                    "limit": 5,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        assert_production_contract(self, data)
+        self.assertEqual(data["service"], "annuitySavingProductsSearch")
+        self.assertEqual(data["products"][0]["start_age"], 60)
+
     def test_mcp_finlife_rent_house_wrapper_accepts_fixture(self):
         data = run_mcp(
             "call-tool",
@@ -299,6 +385,21 @@ class FinancialDecisionNavigatorTests(unittest.TestCase):
         assert_production_contract(self, data)
         self.assertEqual(data["service"], "KeyStatisticList")
         self.assertEqual(data["indicator_count"], 4)
+
+    def test_mcp_macro_context_bundle_accepts_fixture(self):
+        data = run_mcp(
+            "call-tool",
+            "get_macro_context_bundle",
+            "--arguments",
+            json.dumps(
+                {"fixture": str(FIXTURES / "ecos_key_stats_sample.json"), "context": "retirement"},
+                ensure_ascii=False,
+            ),
+        )
+        assert_production_contract(self, data)
+        self.assertEqual(data["context"], "retirement")
+        self.assertGreaterEqual(data["indicator_count"], 2)
+        self.assertIn("거시 지표", data["decision_use"])
 
     def test_mcp_ecos_statistic_search_accepts_fixture(self):
         data = run_mcp(

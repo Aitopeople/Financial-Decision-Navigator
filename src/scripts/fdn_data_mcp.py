@@ -34,6 +34,7 @@ ALLOWED_FETCH_HOSTS = {
 }
 
 DEFAULT_NOT_RECOMMENDATION = "의사결정 변수를 제공하기 위한 데이터이며 특정 상품 가입 또는 투자를 권유하지 않습니다."
+FINLIFE_PROVIDER = "금융감독원 금융상품통합비교공시 Finlife"
 
 
 def load_env_file(start: Path | None = None) -> None:
@@ -258,65 +259,105 @@ def fetch_json(url: str, max_bytes: int = 200_000) -> dict[str, Any]:
     }
 
 
-def get_finlife_mortgage_rate_range(principal: int = 140_000_000, years: int = 30, fixture: str | None = None, limit: int = 5) -> dict[str, Any]:
+def load_finlife_payload(product_key: str, fixture: str | None, top_fin_grp_no: str | None = None) -> tuple[Any, dict[str, Any]]:
     import finlife_client
 
     load_env_file()
-    service = finlife_client.SERVICE_NAMES["mortgage"]
+    service = finlife_client.SERVICE_NAMES[product_key]
+    group_no = top_fin_grp_no or os.environ.get("FINLIFE_TOP_FIN_GRP_NO") or finlife_client.BANK_GROUP
     payload = finlife_client.load_payload(
         fixture,
         service,
         None,
-        os.environ.get("FINLIFE_TOP_FIN_GRP_NO") or finlife_client.BANK_GROUP,
+        group_no,
         int(os.environ.get("FINLIFE_PAGE_NO") or "1"),
     )
+    return finlife_client, payload
+
+
+def get_finlife_mortgage_rate_range(principal: int = 140_000_000, years: int = 30, fixture: str | None = None, limit: int = 5) -> dict[str, Any]:
+    finlife_client, payload = load_finlife_payload("mortgage", fixture)
     return production_contract(
         finlife_client.summarize_mortgage(payload, principal, years, limit),
-        source_url_or_provider="금융감독원 금융상품통합비교공시 Finlife",
+        source_url_or_provider=FINLIFE_PROVIDER,
         freshness_status="fixture" if fixture else "fresh",
         assumptions=[f"대출 원금 {principal}원, 기간 {years}년 기준으로 월 상환액을 계산했습니다."],
     )
 
 
 def get_finlife_rent_house_loan_rate_range(principal: int = 100_000_000, years: int = 2, fixture: str | None = None, limit: int = 5) -> dict[str, Any]:
-    import finlife_client
-
-    load_env_file()
-    service = finlife_client.SERVICE_NAMES["rent_house"]
-    payload = finlife_client.load_payload(
-        fixture,
-        service,
-        None,
-        os.environ.get("FINLIFE_TOP_FIN_GRP_NO") or finlife_client.BANK_GROUP,
-        int(os.environ.get("FINLIFE_PAGE_NO") or "1"),
-    )
+    finlife_client, payload = load_finlife_payload("rent_house", fixture)
     return production_contract(
         finlife_client.summarize_rent_house_loan(payload, principal, years, limit),
-        source_url_or_provider="금융감독원 금융상품통합비교공시 Finlife",
+        source_url_or_provider=FINLIFE_PROVIDER,
         freshness_status="fixture" if fixture else "fresh",
         assumptions=[f"전세자금대출 원금 {principal}원, 기간 {years}년 기준으로 월 상환액을 계산했습니다."],
     )
 
 
 def get_finlife_savings_rate_range(product_type: str = "deposit", save_trm: str | None = "12", fixture: str | None = None, limit: int = 5) -> dict[str, Any]:
-    import finlife_client
-
-    load_env_file()
     if product_type not in {"deposit", "saving"}:
         raise ValueError("product_type must be deposit or saving")
-    service = finlife_client.SERVICE_NAMES[product_type]
-    payload = finlife_client.load_payload(
-        fixture,
-        service,
-        None,
-        os.environ.get("FINLIFE_TOP_FIN_GRP_NO") or finlife_client.BANK_GROUP,
-        int(os.environ.get("FINLIFE_PAGE_NO") or "1"),
-    )
+    finlife_client, payload = load_finlife_payload(product_type, fixture)
     return production_contract(
         finlife_client.summarize_savings(payload, product_type, save_trm, limit),
-        source_url_or_provider="금융감독원 금융상품통합비교공시 Finlife",
+        source_url_or_provider=FINLIFE_PROVIDER,
         freshness_status="fixture" if fixture else "fresh",
         assumptions=[f"저축 기간 {save_trm}개월 상품 조건만 비교했습니다." if save_trm else "저축 기간 필터 없이 상품 조건을 비교했습니다."],
+    )
+
+
+def get_finlife_deposit_saving_candidates(
+    product_type: str = "deposit",
+    save_trm: str | None = "12",
+    join_way: str | None = None,
+    min_basic_rate: float | None = None,
+    min_max_rate: float | None = None,
+    sort_by: str = "max_rate",
+    fixture: str | None = None,
+    limit: int = 5,
+) -> dict[str, Any]:
+    if product_type not in {"deposit", "saving"}:
+        raise ValueError("product_type must be deposit or saving")
+    finlife_client, payload = load_finlife_payload(product_type, fixture)
+    return production_contract(
+        finlife_client.summarize_savings(
+            payload,
+            product_type,
+            save_trm,
+            limit,
+            join_way=join_way,
+            min_basic_rate=min_basic_rate,
+            min_max_rate=min_max_rate,
+            sort_by=sort_by,
+        ),
+        source_url_or_provider=FINLIFE_PROVIDER,
+        freshness_status="fixture" if fixture else "fresh",
+        assumptions=[
+            f"저축 기간 {save_trm}개월 상품 조건만 비교했습니다." if save_trm else "저축 기간 필터 없이 상품 조건을 비교했습니다.",
+            "기본금리, 최고금리, 가입방식, 우대조건 설명을 함께 비교하되 실제 우대 충족 여부는 사용자가 확인해야 합니다.",
+        ],
+    )
+
+
+def get_finlife_annuity_saving_options(
+    start_age: int | None = None,
+    monthly_pay: int | None = None,
+    pay_period: int | None = None,
+    receive_term: str | None = None,
+    fixture: str | None = None,
+    limit: int = 5,
+) -> dict[str, Any]:
+    top_fin_grp_no = os.environ.get("FINLIFE_ANNUITY_TOP_FIN_GRP_NO") or "060000"
+    finlife_client, payload = load_finlife_payload("annuity_saving", fixture, top_fin_grp_no)
+    return production_contract(
+        finlife_client.summarize_annuity_savings(payload, start_age, monthly_pay, pay_period, receive_term, limit),
+        source_url_or_provider=FINLIFE_PROVIDER,
+        freshness_status="fixture" if fixture else "fresh",
+        assumptions=[
+            "연금저축 수령액은 공시 조건별 예시이며 실제 수령액, 세금, 수수료, 투자성과에 따라 달라질 수 있습니다.",
+            "monthly_pay는 Finlife 공시 단위 값입니다. 예: 20은 200,000원 조건을 뜻합니다.",
+        ],
     )
 
 
@@ -338,6 +379,49 @@ def get_ecos_key_stats(fixture: str | None = None) -> dict[str, Any]:
         source_url_or_provider="한국은행 ECOS Open API",
         freshness_status="fixture" if fixture else "fresh",
         assumptions=["ECOS 주요지표 중 금리, 물가, 환율, GDP, 소비 등 의사결정 관련 항목을 선별했습니다."],
+    )
+
+
+def get_macro_context_bundle(context: str = "retirement", fixture: str | None = None) -> dict[str, Any]:
+    import ecos_client
+
+    load_env_file()
+    payload = ecos_client.load_payload(
+        fixture,
+        "KeyStatisticList",
+        None,
+        os.environ.get("ECOS_LANGUAGE") or "kr",
+        int(os.environ.get("ECOS_START") or "1"),
+        int(os.environ.get("ECOS_END") or "100"),
+        [],
+    )
+    summary = ecos_client.summarize_key_stats(payload)
+    terms_by_context = {
+        "retirement": ("금리", "물가", "환율", "GDP", "소득", "가계"),
+        "home": ("금리", "환율", "소득", "가계", "소비", "채권"),
+        "short_saving": ("금리", "물가", "소비", "소득"),
+        "marriage": ("금리", "물가", "소비", "소득", "가계"),
+    }
+    terms = terms_by_context.get(context, terms_by_context["retirement"])
+    indicators = [
+        item
+        for item in summary.get("selected_indicators", [])
+        if any(term in str(item.get("name") or "") or term in str(item.get("class_name") or "") for term in terms)
+    ]
+    as_of = max((str(item.get("cycle")) for item in indicators if item.get("cycle")), default=None)
+    return production_contract(
+        {
+            "source": "한국은행 ECOS Open API",
+            "service": "KeyStatisticList",
+            "as_of": as_of,
+            "context": context,
+            "indicator_count": len(indicators),
+            "indicators": indicators,
+            "decision_use": "목표별 시나리오에 필요한 거시 지표 묶음을 제공합니다.",
+        },
+        source_url_or_provider="한국은행 ECOS Open API",
+        freshness_status="fixture" if fixture else "fresh",
+        assumptions=[f"{context} 의사결정에 맞춰 ECOS 100대 통계지표 중 관련 항목명을 선별했습니다."],
     )
 
 
@@ -502,6 +586,36 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "get_finlife_deposit_saving_candidates": {
+        "description": "Fetch/summarize Finlife deposit or saving candidates with term, join-way, and rate filters.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "product_type": {"type": "string", "default": "deposit", "enum": ["deposit", "saving"]},
+                "save_trm": {"type": "string", "default": "12"},
+                "join_way": {"type": "string"},
+                "min_basic_rate": {"type": "number"},
+                "min_max_rate": {"type": "number"},
+                "sort_by": {"type": "string", "default": "max_rate", "enum": ["basic_rate", "max_rate"]},
+                "fixture": {"type": "string"},
+                "limit": {"type": "integer", "default": 5},
+            },
+        },
+    },
+    "get_finlife_annuity_saving_options": {
+        "description": "Fetch/summarize Finlife annuity-saving options for retirement income path comparisons.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "start_age": {"type": "integer"},
+                "monthly_pay": {"type": "integer"},
+                "pay_period": {"type": "integer"},
+                "receive_term": {"type": "string"},
+                "fixture": {"type": "string"},
+                "limit": {"type": "integer", "default": 5},
+            },
+        },
+    },
     "get_finlife_rent_house_loan_rate_range": {
         "description": "Fetch/summarize Finlife rent-house loan rate options for jeonse decision variables.",
         "inputSchema": {
@@ -519,6 +633,16 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "inputSchema": {
             "type": "object",
             "properties": {
+                "fixture": {"type": "string"},
+            },
+        },
+    },
+    "get_macro_context_bundle": {
+        "description": "Fetch ECOS key statistics and return a goal-specific macro context bundle.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "context": {"type": "string", "default": "retirement", "enum": ["retirement", "home", "short_saving", "marriage"]},
                 "fixture": {"type": "string"},
             },
         },
@@ -584,6 +708,26 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
             fixture=args.get("fixture"),
             limit=int(args.get("limit") or 5),
         )
+    if name == "get_finlife_deposit_saving_candidates":
+        return get_finlife_deposit_saving_candidates(
+            product_type=str(args.get("product_type") or "deposit"),
+            save_trm=str(args.get("save_trm")) if args.get("save_trm") is not None else "12",
+            join_way=optional_str(args, "join_way"),
+            min_basic_rate=optional_float(args, "min_basic_rate"),
+            min_max_rate=optional_float(args, "min_max_rate"),
+            sort_by=str(args.get("sort_by") or "max_rate"),
+            fixture=args.get("fixture"),
+            limit=int(args.get("limit") or 5),
+        )
+    if name == "get_finlife_annuity_saving_options":
+        return get_finlife_annuity_saving_options(
+            start_age=optional_int(args, "start_age"),
+            monthly_pay=optional_int(args, "monthly_pay"),
+            pay_period=optional_int(args, "pay_period"),
+            receive_term=optional_str(args, "receive_term"),
+            fixture=args.get("fixture"),
+            limit=int(args.get("limit") or 5),
+        )
     if name == "get_finlife_rent_house_loan_rate_range":
         return get_finlife_rent_house_loan_rate_range(
             principal=int(args.get("principal") or 100_000_000),
@@ -593,6 +737,11 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
         )
     if name == "get_ecos_key_stats":
         return get_ecos_key_stats(fixture=args.get("fixture"))
+    if name == "get_macro_context_bundle":
+        return get_macro_context_bundle(
+            context=str(args.get("context") or "retirement"),
+            fixture=args.get("fixture"),
+        )
     if name == "get_ecos_statistic_search":
         return get_ecos_statistic_search(
             stat_code=str(args["stat_code"]),
@@ -698,6 +847,18 @@ def parse_scalar(value: str) -> Any:
         return float(value)
     except ValueError:
         return value
+
+
+def optional_str(args: dict[str, Any], key: str) -> str | None:
+    return str(args[key]) if args.get(key) is not None else None
+
+
+def optional_int(args: dict[str, Any], key: str) -> int | None:
+    return int(args[key]) if args.get(key) is not None else None
+
+
+def optional_float(args: dict[str, Any], key: str) -> float | None:
+    return float(args[key]) if args.get(key) is not None else None
 
 
 def parse_call_arguments(raw_json: str, pairs: list[str]) -> dict[str, Any]:

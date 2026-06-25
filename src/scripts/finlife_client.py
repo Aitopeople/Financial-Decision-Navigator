@@ -23,12 +23,14 @@ BANK_GROUP = "020000"
 SERVICE_NAMES = {
     "deposit": "depositProductsSearch",
     "saving": "savingProductsSearch",
+    "annuity_saving": "annuitySavingProductsSearch",
     "mortgage": "mortgageLoanProductsSearch",
     "rent_house": "rentHouseLoanProductsSearch",
 }
 
 MORTGAGE_JOIN_KEYS = ("dcls_month", "fin_co_no", "fin_prdt_cd")
 SAVING_JOIN_KEYS = ("dcls_month", "fin_co_no", "fin_prdt_cd")
+ANNUITY_JOIN_KEYS = ("dcls_month", "fin_co_no", "fin_prdt_cd")
 
 
 @dataclass(frozen=True)
@@ -173,7 +175,22 @@ def summarize_loan(payload: dict[str, Any], service: str, principal: int, years:
     }
 
 
-def summarize_savings(payload: dict[str, Any], product_type: str, save_trm: str | None, limit: int) -> dict[str, Any]:
+def text_contains(value: Any, needle: str | None) -> bool:
+    if not needle:
+        return True
+    return needle.lower() in str(value or "").lower()
+
+
+def summarize_savings(
+    payload: dict[str, Any],
+    product_type: str,
+    save_trm: str | None,
+    limit: int,
+    join_way: str | None = None,
+    min_basic_rate: float | None = None,
+    min_max_rate: float | None = None,
+    sort_by: str = "max_rate",
+) -> dict[str, Any]:
     result = finlife_result(payload)
     base_list = result.get("baseList") or []
     option_list = result.get("optionList") or []
@@ -183,30 +200,112 @@ def summarize_savings(payload: dict[str, Any], product_type: str, save_trm: str 
         if save_trm and str(option.get("save_trm")) != str(save_trm):
             continue
         base = join_base(base_list, option, SAVING_JOIN_KEYS)
+        if not text_contains(base.get("join_way"), join_way):
+            continue
         basic_rate = as_float(option.get("intr_rate"))
         max_rate = as_float(option.get("intr_rate2"))
         if basic_rate is None and max_rate is None:
+            continue
+        if min_basic_rate is not None and (basic_rate is None or basic_rate < min_basic_rate):
+            continue
+        if min_max_rate is not None and (max_rate is None or max_rate < min_max_rate):
             continue
         rows.append(
             {
                 "bank": base.get("kor_co_nm"),
                 "product": base.get("fin_prdt_nm"),
                 "join_way": base.get("join_way"),
+                "special_condition": base.get("spcl_cnd"),
+                "join_member": base.get("join_member"),
+                "max_limit": base.get("max_limit"),
                 "save_term_months": option.get("save_trm"),
                 "rate_type": option.get("intr_rate_type_nm"),
+                "reserve_type": option.get("rsrv_type_nm"),
                 "basic_rate": basic_rate,
                 "max_rate": max_rate,
             }
         )
 
-    rows.sort(key=lambda item: (item["max_rate"] if item["max_rate"] is not None else -1), reverse=True)
+    sort_key = "basic_rate" if sort_by == "basic_rate" else "max_rate"
+    rows.sort(key=lambda item: (item[sort_key] if item[sort_key] is not None else -1), reverse=True)
     return {
         "source": "금융감독원 금융상품통합비교공시 Finlife",
         "service": SERVICE_NAMES[product_type],
         "total_options": len(rows),
         "save_term_months": save_trm,
+        "filters": {
+            "join_way": join_way,
+            "min_basic_rate": min_basic_rate,
+            "min_max_rate": min_max_rate,
+            "sort_by": sort_key,
+        },
         "products": rows[:limit],
         "decision_use": "저축하며 기다리는 선택지의 기대 금리 범위를 잡는 데 사용합니다.",
+    }
+
+
+def summarize_annuity_savings(
+    payload: dict[str, Any],
+    start_age: int | None,
+    monthly_pay: int | None,
+    pay_period: int | None,
+    receive_term: str | None,
+    limit: int,
+) -> dict[str, Any]:
+    result = finlife_result(payload)
+    base_list = result.get("baseList") or []
+    option_list = result.get("optionList") or []
+    rows: list[dict[str, Any]] = []
+
+    for option in option_list:
+        if start_age is not None and as_float(option.get("pnsn_strt_age")) != float(start_age):
+            continue
+        if monthly_pay is not None and as_float(option.get("mon_paym_atm")) != float(monthly_pay):
+            continue
+        if pay_period is not None and as_float(option.get("paym_prd")) != float(pay_period):
+            continue
+        if receive_term and not text_contains(option.get("pnsn_recp_trm_nm"), receive_term):
+            continue
+        base = join_base(base_list, option, ANNUITY_JOIN_KEYS)
+        receive_amount = as_float(option.get("pnsn_recp_amt"))
+        rows.append(
+            {
+                "company": base.get("kor_co_nm"),
+                "product": base.get("fin_prdt_nm"),
+                "join_way": base.get("join_way"),
+                "pension_kind": base.get("pnsn_kind_nm"),
+                "product_type": base.get("prdt_type_nm"),
+                "average_profit_rate": as_float(base.get("avg_prft_rate")),
+                "disclosed_rate": as_float(base.get("dcls_rate")),
+                "guaranteed_rate": as_float(base.get("guar_rate")),
+                "one_year_return": as_float(base.get("btrm_prft_rate_1")),
+                "two_year_return": as_float(base.get("btrm_prft_rate_2")),
+                "three_year_return": as_float(base.get("btrm_prft_rate_3")),
+                "sale_company": base.get("sale_co"),
+                "receive_term": option.get("pnsn_recp_trm_nm"),
+                "entry_age": option.get("pnsn_entr_age"),
+                "monthly_payment_unit": option.get("mon_paym_atm"),
+                "monthly_payment": option.get("mon_paym_atm_nm"),
+                "pay_period_years": option.get("paym_prd"),
+                "start_age": option.get("pnsn_strt_age"),
+                "expected_receive_amount": receive_amount,
+            }
+        )
+
+    rows.sort(key=lambda item: (item["expected_receive_amount"] if item["expected_receive_amount"] is not None else -1), reverse=True)
+    return {
+        "source": "금융감독원 금융상품통합비교공시 Finlife",
+        "service": SERVICE_NAMES["annuity_saving"],
+        "dcls_month": result.get("baseList", [{}])[0].get("dcls_month") if base_list else None,
+        "total_options": len(rows),
+        "filters": {
+            "start_age": start_age,
+            "monthly_pay": monthly_pay,
+            "pay_period": pay_period,
+            "receive_term": receive_term,
+        },
+        "products": rows[:limit],
+        "decision_use": "은퇴 현금흐름 경로를 비교하기 위한 연금저축 상품 조건이며 가입 권유가 아닙니다.",
     }
 
 
@@ -257,6 +356,17 @@ def build_parser() -> argparse.ArgumentParser:
     savings.add_argument("--type", choices=["deposit", "saving"], default="deposit")
     savings.add_argument("--save-trm", help="Savings term in months, for example 12, 24, 36.")
     savings.add_argument("--limit", type=int, default=5)
+    savings.add_argument("--join-way", help="Filter products whose join_way contains this text, e.g. 스마트폰.")
+    savings.add_argument("--min-basic-rate", type=float)
+    savings.add_argument("--min-max-rate", type=float)
+    savings.add_argument("--sort-by", choices=["basic_rate", "max_rate"], default="max_rate")
+
+    annuity = sub.add_parser("annuity-saving")
+    annuity.add_argument("--start-age", type=int)
+    annuity.add_argument("--monthly-pay", type=int, help="Finlife mon_paym_atm unit, e.g. 20 for 200,000원.")
+    annuity.add_argument("--pay-period", type=int)
+    annuity.add_argument("--receive-term", help="Filter receive term text, e.g. 20년.")
+    annuity.add_argument("--limit", type=int, default=5)
 
     payment = sub.add_parser("payment")
     payment.add_argument("--principal", type=int, required=True)
@@ -270,7 +380,8 @@ def main() -> int:
     load_env_file()
     parser = build_parser()
     args = parser.parse_args()
-    top_fin_grp_no = args.top_fin_grp_no or os.environ.get("FINLIFE_TOP_FIN_GRP_NO") or BANK_GROUP
+    default_top_fin_grp_no = "060000" if args.command == "annuity-saving" else BANK_GROUP
+    top_fin_grp_no = args.top_fin_grp_no or os.environ.get("FINLIFE_TOP_FIN_GRP_NO") or default_top_fin_grp_no
     page_no = args.page_no or int(os.environ.get("FINLIFE_PAGE_NO") or "1")
     try:
         if args.command == "payment":
@@ -282,6 +393,8 @@ def main() -> int:
             service = SERVICE_NAMES["mortgage"]
         elif args.command == "rent-house":
             service = SERVICE_NAMES["rent_house"]
+        elif args.command == "annuity-saving":
+            service = SERVICE_NAMES["annuity_saving"]
         else:
             service = SERVICE_NAMES[args.type]
         payload = load_payload(args.fixture, service, args.auth, top_fin_grp_no, page_no)
@@ -289,8 +402,19 @@ def main() -> int:
             output = summarize_mortgage(payload, args.principal, args.years, args.limit)
         elif args.command == "rent-house":
             output = summarize_rent_house_loan(payload, args.principal, args.years, args.limit)
+        elif args.command == "annuity-saving":
+            output = summarize_annuity_savings(payload, args.start_age, args.monthly_pay, args.pay_period, args.receive_term, args.limit)
         else:
-            output = summarize_savings(payload, args.type, args.save_trm, args.limit)
+            output = summarize_savings(
+                payload,
+                args.type,
+                args.save_trm,
+                args.limit,
+                args.join_way,
+                args.min_basic_rate,
+                args.min_max_rate,
+                args.sort_by,
+            )
         print(json.dumps(output, ensure_ascii=False, indent=2))
         return 0
     except Exception as exc:  # noqa: BLE001 - CLI boundary
